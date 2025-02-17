@@ -19,12 +19,16 @@ An example that demonstrates various DOF control methods:
 
 Usage:
 cd isaacgympreview-example-zoo
-python examples/controls/dof_controls.py
+python examples/controls/dof_controls_tensor_gpu.py
+
+Ref: https://docs.robotsfan.com/isaacgym/programming/tensors.html#dof-controls
 """
 
 import math
 from isaacgym import gymapi
 from isaacgym import gymutil
+from isaacgym import gymtorch
+import torch
 
 # initialize gym
 gym = gymapi.acquire_gym()
@@ -41,14 +45,17 @@ sim_params.physx.solver_type = 1
 sim_params.physx.num_position_iterations = 4
 sim_params.physx.num_velocity_iterations = 1
 
-sim_params.physx.num_threads = args.num_threads
-sim_params.physx.use_gpu = args.use_gpu
+sim_params.physx.num_threads = 4
 
-sim_params.use_gpu_pipeline = False
-if args.use_gpu_pipeline:
-    print("WARNING: Forcing CPU pipeline.")
+# use gpu_pipeline(use Gym tensor API), and run experiment on CPU, to more detailed information printting
+# which is very useful for debugging.
+sim_params.physx.use_gpu = False
+# the gym tensor's device should align with the sim_params.use_gpu_pipeline
+sim_params.use_gpu_pipeline = True
+if not args.use_gpu_pipeline:
+    assert("WARNING: Forcing GPU pipeline.")
 
-sim = gym.create_sim(args.compute_device_id, args.graphics_device_id, args.physics_engine, sim_params)
+sim = gym.create_sim(0, 0, gymapi.SIM_PHYSX, sim_params)
 
 if sim is None:
     print("*** Failed to create sim")
@@ -97,8 +104,9 @@ props["stiffness"] = (5000.0, 5000.0)
 props["damping"] = (100.0, 100.0)
 gym.set_actor_dof_properties(env0, cartpole0, props)
 # Set DOF drive targets
-cart_dof_handle0 = gym.find_actor_dof_handle(env0, cartpole0, 'slider_to_cart')
-pole_dof_handle0 = gym.find_actor_dof_handle(env0, cartpole0, 'cart_to_pole')
+# TODO: use find_actor_dof_handle to find the handle(numberic index) of the DOF in the actor by name.
+cart_dof_handle0 = gym.find_actor_dof_handle(env0, cartpole0, 'slider_to_cart') # 0
+pole_dof_handle0 = gym.find_actor_dof_handle(env0, cartpole0, 'cart_to_pole') # 1
 gym.set_dof_target_position(env0, cart_dof_handle0, 0)
 gym.set_dof_target_position(env0, pole_dof_handle0, 0.25 * math.pi)
 
@@ -153,6 +161,11 @@ pole_dof_handle3 = gym.find_actor_dof_handle(env3, cartpole3, 'cart_to_pole')
 gym.set_dof_target_position(env3, cart_dof_handle3, 0.0)
 gym.apply_dof_effort(env3, pole_dof_handle3, 200)
 
+# TODO: !MUST call prepare_sim, after all the environments are fully set up, to initial GPU memory used by tensor API!
+# related error:
+# - Gym cuda error: an illegal memory access was encountere
+gym.prepare_sim(sim)
+
 # Look at the first env
 cam_pos = gymapi.Vec3(8, 4, 1.5)
 cam_target = gymapi.Vec3(0, 2, 1.5)
@@ -172,17 +185,72 @@ while not gym.query_viewer_has_closed(viewer):
     # Nothing to be done for env 0
 
     # Nothing to be done for env 1
-
+    # TODO: Function GymSetDofTargetVelocity cannot be used with the GPU pipeline after simulation starts.  Please use the tensor API if possible.  See docs/programming/tensors.html for more info.!
+    # TODO: before simulation starts, you can use the function just as off use gpu_pipeline, but after starts, must use Tensor API, to acquire states and set targets.
     # Update env 2: reverse cart target velocity when bounds reached
-    pos = gym.get_dof_position(env2, cart_dof_handle2)
+    # ---------------- Functions of set target with tensor API ----------------
+    def get_dof_position(env_handle, actor_handle, dof_index_in_actor):
+        # TODO: !MUST call refresh_dof_state_tensor, synchronize the state of the degrees of freedom (DOF) between the simulator and your code. !
+        gym.refresh_dof_state_tensor(sim)
+        dof_states = gym.acquire_dof_state_tensor(sim)
+        dof_states_tensor = gymtorch.wrap_tensor(dof_states)
+        actor_dof_start = gym.get_actor_dof_index(env_handle, actor_handle, 0, gymapi.DOMAIN_SIM)
+        num_actor_dofs = gym.get_actor_dof_count(env_handle, actor_handle)
+        actor_dof_states = dof_states_tensor[actor_dof_start: actor_dof_start + num_actor_dofs, 0]
+        return actor_dof_states.cpu().numpy()[dof_index_in_actor]
+    
+    def set_dof_target_velocity(env_handle, actor_handle, dof_index_in_actor, target_velocity):
+        dof_states = gym.acquire_dof_state_tensor(sim)
+        dof_states_tensor = gymtorch.wrap_tensor(dof_states) # [num_sim_dofs, 2]
+        target_velocities_tensor = dof_states_tensor[:, 1].clone()
+        actor_dof_start = gym.get_actor_dof_index(env_handle, actor_handle, dof_index_in_actor, gymapi.DOMAIN_SIM)
+        target_velocities_tensor[actor_dof_start] = target_velocity
+        gym.set_dof_velocity_target_tensor(sim, gymtorch.unwrap_tensor(target_velocities_tensor))
+        
+    def set_dof_target_velocity_v2(env_handle, actor_handle, dof_index_in_actor, target_velocity):
+        dof_states = gym.acquire_dof_state_tensor(sim)
+        dof_states_tensor = gymtorch.wrap_tensor(dof_states) # [num_sim_dofs, 2]
+        target_velocities_tensor = dof_states_tensor[:, 1].clone()
+        actor_dof_start = gym.get_actor_dof_index(env_handle, actor_handle, dof_index_in_actor, gymapi.DOMAIN_SIM)
+        actor_index = gym.get_actor_index(env_handle, actor_handle, gymapi.DOMAIN_SIM)
+        target_velocities_tensor[actor_dof_start] = target_velocity
+        actor_indices = torch.tensor([actor_index], dtype=torch.int32, device='cuda')
+        gym.set_dof_velocity_target_tensor_indexed(sim, gymtorch.unwrap_tensor(target_velocities_tensor),
+                                                   gymtorch.unwrap_tensor(actor_indices), len(actor_indices))
+        
+    def apply_dof_effort(env_handle, actor_handle, dof_index_in_actor, effort):
+        dof_efforts_tensor = torch.zeros(gym.get_sim_dof_count(sim), dtype=torch.float32, device='cuda')
+        actor_dof_start = gym.get_actor_dof_index(env_handle, actor_handle, dof_index_in_actor, gymapi.DOMAIN_SIM)
+        dof_efforts_tensor[actor_dof_start] = effort
+        ret = gym.set_dof_actuation_force_tensor(sim, gymtorch.unwrap_tensor(dof_efforts_tensor))
+        # print(f'Successfully apply efforts: {ret}')
+        
+    def apply_dof_effort_v2(env_handle, actor_handle, dof_index_in_actor, effort):
+        dof_efforts_tensor = torch.zeros(gym.get_sim_dof_count(sim), dtype=torch.float32, device='cuda')
+        actor_index = gym.get_actor_index(env_handle, actor_handle, gymapi.DOMAIN_SIM)
+        actor_dof_start = gym.get_actor_dof_index(env_handle, actor_handle, dof_index_in_actor, gymapi.DOMAIN_SIM)
+        dof_efforts_tensor[actor_dof_start] = effort
+        actor_indices = torch.tensor([actor_index], dtype=torch.int32, device='cuda')
+        
+        # set_xxx_tensor_indexed compared to set_xxx_tensor, is just a masked version of writing back to the global tensor.
+        ret = gym.set_dof_actuation_force_tensor_indexed(sim, gymtorch.unwrap_tensor(dof_efforts_tensor), 
+                                                         gymtorch.unwrap_tensor(actor_indices),
+                                                         len(actor_indices))
+        # print(f'Successfully apply efforts: {ret}')
+                                                  
+        
+    pos = get_dof_position(env2, cartpole2, cart_dof_handle2)
     if pos >= 0.5:
-        gym.set_dof_target_velocity(env2, cart_dof_handle2, -1.0)
+        # gym.set_dof_target_velocity(env2, cart_dof_handle2, -1.0)
+        set_dof_target_velocity(env2, cartpole2, cart_dof_handle2, -1.0)
     elif pos <= -0.5:
-        gym.set_dof_target_velocity(env2, cart_dof_handle2, 1.0)
+        # gym.set_dof_target_velocity(env2, cart_dof_handle2, 1.0)
+        set_dof_target_velocity_v2(env2, cartpole2, cart_dof_handle2, 1.0)
 
     # Update env 3: apply an effort to the pole to keep it upright
-    pos = gym.get_dof_position(env3, pole_dof_handle3)
-    gym.apply_dof_effort(env3, pole_dof_handle3, -pos * 50)
+    pos = get_dof_position(env3, cartpole3, pole_dof_handle3)
+    # gym.apply_dof_effort(env3, pole_dof_handle3, -pos * 50)
+    apply_dof_effort_v2(env3, cartpole3, pole_dof_handle3, -pos * 500)
 
     # Wait for dt to elapse in real time.
     # This synchronizes the physics simulation with the rendering rate.

@@ -22,6 +22,11 @@ cd isaacgympreview-example-zoo
 python examples/controls/dof_controls_tensor_cpu.py
 
 Ref: https://docs.robotsfan.com/isaacgym/programming/tensors.html#dof-controls
+
+Why gym tensor on CPU?
+for debugging, or for some reason you want to run the experiment on CPU, you can use the tensor API on CPU.
+and the tensor API is the same as the tensor API on GPU, so you can easily switch between CPU and GPU.
+Ref: https://docs.robotsfan.com/isaacgym/programming/tensors.html#tensor-api
 """
 
 import math

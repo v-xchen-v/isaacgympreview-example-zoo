@@ -256,12 +256,16 @@ while not gym.query_viewer_has_closed(viewer):
     gym.sync_frame_time(sim)
     
     if step == 0:
+        # Store the initial DoF states
         # cart0_dof_states = gym.get_actor_dof_states(env0, cartpole0, gymapi.STATE_ALL)
         # cart1_dof_states = gym.get_actor_dof_states(env1, cartpole1, gymapi.STATE_ALL)
         # cart2_dof_states = gym.get_actor_dof_states(env2, cartpole2, gymapi.STATE_ALL)
         # cart3_dof_states = gym.get_actor_dof_states(env3, cartpole3, gymapi.STATE_ALL)
         _global_dof_states = gym.acquire_dof_state_tensor(sim)
         global_dof_states = gymtorch.wrap_tensor(_global_dof_states).clone()
+        
+        # No inital DoF targets, store initial position instead
+
         
         # initial_body_states = gym.get_sim_rigid_body_states(sim, gymapi.STATE_ALL) # [num_rigid_bodies, 3+4+3+3], position(3)+quat(4)+linear_vel(3)+angular_vel(4)
         # TODO: MUST call refresh_actor_root_state_tensor, synchronize the state of the root bodies between the simulator and your code.
@@ -287,6 +291,10 @@ while not gym.query_viewer_has_closed(viewer):
         # gym.set_actor_dof_states(env2, cartpole2, cart2_dof_states, gymapi.STATE_ALL)
         # gym.set_actor_dof_states(env3, cartpole3, cart3_dof_states, gymapi.STATE_ALL)
         gym.set_dof_state_tensor(sim, gymtorch.unwrap_tensor(global_dof_states))
+        
+        # Reset the DoF target position, in this example different DoF use different drive mode, we ignore it here, actually you can use the 
+        # set_dof_xxx_target_tensor to reset it.
+        # gym.set_dof_position_target_tensor_indexed(...)
 
     if step % 100 == 0:
         reset()

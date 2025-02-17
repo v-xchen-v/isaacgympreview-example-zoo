@@ -196,6 +196,15 @@ while not gym.query_viewer_has_closed(viewer):
         cart2_dof_states = gym.get_actor_dof_states(env2, cartpole2, gymapi.STATE_ALL)
         cart3_dof_states = gym.get_actor_dof_states(env3, cartpole3, gymapi.STATE_ALL)
         
+        cart0_dof0_target_position = gym.get_dof_target_position(env0, cart_dof_handle0) # [1]
+        cart0_dof1_target_position = gym.get_dof_target_position(env0, pole_dof_handle0) # [1]
+        cart1_dof0_target_position = gym.get_dof_target_position(env1, cart_dof_handle1) # [1]
+        cart1_dof1_target_velocity = gym.get_dof_target_velocity(env1, pole_dof_handle1) # [1]
+        cart2_dof0_target_velocity = gym.get_dof_target_velocity(env2, cart_dof_handle2) # [1]    
+        cart2_dof1_target_position = gym.get_dof_target_position(env2, pole_dof_handle2) # [1]
+        cart3_dof0_target_position = gym.get_dof_target_position(env3, cart_dof_handle3) # [1]
+
+    
         # initial_body_states = gym.get_actor_rigid_body_states(env, actor_handle, gymapi.STATE_ALL)
         # initial_body_states = gym.get_env_rigid_body_states(env, gymapi.STATE_ALL)
         initial_body_states = gym.get_sim_rigid_body_states(sim, gymapi.STATE_ALL) # [num_rigid_bodies, 3+4+3+3], position(3)+quat(4)+linear_vel(3)+angular_vel(4)
@@ -203,16 +212,26 @@ while not gym.query_viewer_has_closed(viewer):
 
     def reset():
         print("Resetting environment...")
-        # Reset physics states, includes rigid body states and dof states
+        # Reset physics states, includes rigid body states and dof states, and dof targets
         
-        # Reset the actor's transform
+        # Reset to the inital actor's transform
         gym.set_sim_rigid_body_states(sim, initial_body_states, gymapi.STATE_ALL)
         
-        # Reset the DOF states
+        # Reset to the initial DOF states
         gym.set_actor_dof_states(env0, cartpole0, cart0_dof_states, gymapi.STATE_ALL)
         gym.set_actor_dof_states(env1, cartpole1, cart1_dof_states, gymapi.STATE_ALL)
         gym.set_actor_dof_states(env2, cartpole2, cart2_dof_states, gymapi.STATE_ALL)
         gym.set_actor_dof_states(env3, cartpole3, cart3_dof_states, gymapi.STATE_ALL)
+        
+        # Reset to the initial DOF targets
+        gym.set_dof_target_position(env0, cart_dof_handle0, cart0_dof0_target_position)
+        gym.set_dof_target_position(env0, pole_dof_handle0, cart0_dof1_target_position)
+        gym.set_dof_target_position(env1, cart_dof_handle1, cart1_dof0_target_position)
+        gym.set_dof_target_velocity(env1, pole_dof_handle1, cart1_dof1_target_velocity)
+        gym.set_dof_target_velocity(env2, cart_dof_handle2, cart2_dof0_target_velocity)
+        gym.set_dof_target_position(env2, pole_dof_handle2, cart2_dof1_target_position)
+        gym.set_dof_target_position(env3, cart_dof_handle3, cart3_dof0_target_position)
+    
 
     if step % 100 == 0:
         reset()

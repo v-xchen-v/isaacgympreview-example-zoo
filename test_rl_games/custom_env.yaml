@@ -1,0 +1,48 @@
+params:
+  seed: 123
+  full_experiment_name: "custom_env_experiment"
+
+  algo:
+    name: "a2c_discrete"
+
+  model:
+    name: discrete_a2c
+
+  # env_config_name: "custom_env"
+
+  player:
+    render: False
+
+  network:
+    name: actor_critic
+    separate: True
+    space: 
+      discrete:
+    mlp:
+      units: [32, 32]
+      activation: relu
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  config:
+    env_name: "CustomEnv-v0"
+    name: custom_env
+    max_epochs: 100
+    num_actors: 8
+    horizon_length: 128
+    minibatch_size: 256
+    learning_rate: 0.0003
+    gamma: 0.99
+    lam: 0.95
+    entropy_coef: 0.01
+    critic_coef: 2
+    clip_range: 0.2
+    kl_threshold: 0.008
+    use_diagnostics: True
+    normalize_advantage: True
+    use_action_mask: False
+
+    reward_shaper:
+      scale_value: 1.0

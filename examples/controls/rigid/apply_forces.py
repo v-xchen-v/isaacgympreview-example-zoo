@@ -63,7 +63,7 @@ if viewer is None:
     raise Exception("Failed to create viewer")
 
 # load ball asset
-asset_root = "../assets"
+asset_root = "./assets"
 asset_file = "mjcf/nv_ant.xml"
 asset = gym.load_asset(sim, asset_root, asset_file, gymapi.AssetOptions())
 
